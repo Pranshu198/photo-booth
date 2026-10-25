@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>AI Photo Booth — Jack Bhai</title>
-<meta name="description" content="Live camera photo booth: age guess, expression match game aur frame wali photo — shaadi, birthday, har event ke liye.">
+<meta name="description" content="Live camera photo booth: 10 readings ka average age + gender guess, expression match game, jodi match aur frame wali photo.">
 <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
 <style>
@@ -24,7 +24,6 @@
     font-size:30px; letter-spacing:.5px;
     background:linear-gradient(180deg,#ffe9a8,#e9b949 55%,#b57f1d);
     -webkit-background-clip:text; background-clip:text; color:transparent;
-    text-shadow:0 2px 12px rgba(0,0,0,.15);
   }
   header p{ font-size:13.5px; opacity:.85; margin-top:3px; }
   .stage{
@@ -49,20 +48,26 @@
   }
   .status{
     margin-top:12px; background:var(--card); border:1px solid var(--stroke);
-    border-radius:16px; padding:12px 14px; display:flex; gap:10px; text-align:center;
+    border-radius:16px; padding:12px 8px; display:flex; gap:6px; text-align:center;
   }
-  .status .cell{ flex:1; }
-  .status .k{ font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; opacity:.75; }
-  .status .v{ font-size:19px; font-weight:700; margin-top:3px; color:#ffe9a8; }
+  .status .cell{ flex:1; min-width:0; }
+  .status .k{ font-size:10.5px; text-transform:uppercase; letter-spacing:.7px; opacity:.75; }
+  .status .v{ font-size:16.5px; font-weight:700; margin-top:3px; color:#ffe9a8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .panel{
     margin-top:12px; background:var(--card); border:1px solid var(--stroke);
     border-radius:16px; padding:14px;
   }
   .panel h2{ font-size:17px; color:#ffe9a8; margin-bottom:6px; }
   .panel p{ font-size:14px; line-height:1.55; opacity:.92; }
-  #gameTarget{ font-size:21px; font-weight:800; margin:8px 0 4px; }
   .bar{ height:12px; background:rgba(255,255,255,.14); border-radius:99px; overflow:hidden; margin-top:10px; }
-  .bar > div{ height:100%; width:0%; background:linear-gradient(90deg,var(--gold2),var(--gold)); transition:width .12s linear; }
+  .bar > div{ height:100%; width:0%; background:linear-gradient(90deg,var(--gold2),var(--gold)); transition:width .15s linear; }
+  #gateMsg{ font-size:14px; font-weight:600; color:#ffd166; min-height:21px; margin-top:8px; }
+  #resultBox{ display:none; margin-top:12px; text-align:center; }
+  #resultCat{ font-size:27px; font-weight:800; color:#ffe9a8; margin:4px 0; }
+  #resultDetail{ font-size:15px; line-height:1.6; }
+  .chip{ display:inline-block; background:rgba(233,185,73,.2); border:1px solid var(--stroke); border-radius:99px; padding:3px 12px; font-size:13px; margin:2px; }
+  .engines{ font-size:12.5px; opacity:.75; line-height:1.7; margin-top:10px; }
+  #gameTarget{ font-size:21px; font-weight:800; margin:8px 0 4px; }
   .row{ display:flex; gap:10px; margin-top:12px; }
   button{
     flex:1; border:none; cursor:pointer; border-radius:14px; padding:14px 10px;
@@ -77,15 +82,15 @@
   .frames button.sel{ outline:2px solid var(--gold); background:rgba(233,185,73,.22); }
   #shotBox{ display:none; margin-top:12px; text-align:center; }
   #shotBox img{ width:100%; border-radius:16px; border:2px solid var(--stroke); }
+  #jodiVal{ font-size:22px; font-weight:800; color:#ffe9a8; margin-top:6px; }
   .privacy{ text-align:center; font-size:12.5px; opacity:.7; margin-top:16px; line-height:1.6; }
-  .err{ background:rgba(255,80,80,.15); border:1px solid rgba(255,120,120,.5); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>📸 AI Photo Booth</h1>
-    <p>Age guess &bull; Expression game &bull; Frame wali photo — by Jack Bhai</p>
+    <p>Age + Gender reading &bull; Expression game &bull; Jodi match &bull; Frame wali photo — by Jack Bhai</p>
   </header>
 
   <div class="stage">
@@ -94,15 +99,38 @@
     <div id="countdown">3</div>
     <div class="hint" id="hint">
       <div class="big">🤳</div>
-      <p id="hintText">Pehle AI model load ho raha hai…<br>Phir camera on karke maza shuru!</p>
-      <button class="btn-gold" id="startBtn" disabled style="flex:none; padding:14px 28px;">Model load ho raha hai…</button>
+      <p id="hintText">Pehle AI ke 4 engine load ho rahe hain…<br>Thoda time lagega, phir maza shuru!</p>
+      <button class="btn-gold" id="startBtn" disabled style="flex:none; padding:14px 28px;">Engine load ho rahe hain…</button>
     </div>
   </div>
 
   <div class="status">
-    <div class="cell"><div class="k">Age Andaaz</div><div class="v" id="ageVal">—</div></div>
+    <div class="cell"><div class="k">Age</div><div class="v" id="ageVal">—</div></div>
+    <div class="cell"><div class="k">Gender</div><div class="v" id="genderVal">—</div></div>
     <div class="cell"><div class="k">Mood</div><div class="v" id="moodVal">—</div></div>
     <div class="cell"><div class="k">Faces</div><div class="v" id="faceVal">0</div></div>
+  </div>
+
+  <div class="panel" id="readPanel">
+    <h2>🎯 Pakki Reading (10 Readings ka Average)</h2>
+    <p>Chehra camera ke saamne seedha rakho. Har reading 4 checkpoints se pass hogi, 10 pakki readings ka average <b>lock</b> ho jayega — phir reading hilegi nahi.</p>
+    <div id="gateMsg">Camera on karne ke baad reading shuru hogi…</div>
+    <div class="bar"><div id="readBar"></div></div>
+    <p style="margin-top:6px;">Reading: <b id="readCount">0</b> / 10</p>
+    <div id="resultBox">
+      <div><span class="chip">🔒 READING LOCK</span></div>
+      <div id="resultCat">—</div>
+      <div id="resultDetail">—</div>
+      <div class="row">
+        <button class="btn-gold" id="resetReadBtn">🔁 Nayi Reading Lo</button>
+      </div>
+    </div>
+    <p class="engines">⚙️ <b>4 Engine kaam kar rahe hain:</b><br>
+    1️⃣ Age/Gender Engine — 10 baar reading leta hai<br>
+    2️⃣ Dusra Detector (SSD) — har reading ko cross-check karta hai<br>
+    3️⃣ Landmark Engine — face seedha hai + aankhen khuli hain, ye checkpoint dekhta hai<br>
+    4️⃣ Expression Engine — mood ko vote se pakka karta hai<br>
+    <i>Note: ye andaaz hai, janam-tithi wala saboot nahi — lekin ab reading baar-baar badlegi nahi.</i></p>
   </div>
 
   <div class="panel" id="gamePanel">
@@ -114,6 +142,12 @@
     <div class="row">
       <button class="btn-gold" id="gameBtn" disabled>▶️ Khel Shuru Karo</button>
     </div>
+  </div>
+
+  <div class="panel">
+    <h2>👥 Jodi Match (Naya Tool Merge)</h2>
+    <p>Camera ke saamne <b>2 log</b> aao — dono ke chehre kitne % milte hain, ye batayega. Shaadi me couple aur doston ke liye full maza!</p>
+    <div id="jodiVal">Do chehre ka intezaar hai…</div>
   </div>
 
   <div class="panel">
@@ -149,8 +183,12 @@ const startBtn = document.getElementById('startBtn');
 const shotBtn = document.getElementById('shotBtn');
 const gameBtn = document.getElementById('gameBtn');
 const ageVal = document.getElementById('ageVal');
+const genderVal = document.getElementById('genderVal');
 const moodVal = document.getElementById('moodVal');
 const faceVal = document.getElementById('faceVal');
+const gateMsg = document.getElementById('gateMsg');
+const readBar = document.getElementById('readBar');
+const readCount = document.getElementById('readCount');
 
 const EXPR = {
   neutral:   { hi:'Normal 😐',    game:false },
@@ -166,20 +204,161 @@ const GAME_EXPRS = Object.keys(EXPR).filter(k => EXPR[k].game);
 let cameraOn = false;
 let frameStyle = 'shaadi';
 let game = { on:false, target:null, holdStart:0, score:0, round:0 };
+let lastMainBox = null;           // video coords, live loop se
+let lastFaceSeenAt = 0;
 
+/* ---------------- READING SYSTEM ---------------- */
+const NEED = 10;
+let reading = { state:'idle', samples:[], result:null, busy:false, lastSampleAt:0, faceLostSince:0 };
+
+function categoryFor(age, gender){
+  if (gender === 'male'){
+    if (age < 13) return 'Baccha 👦';
+    if (age < 20) return 'Teenager 🧑';
+    if (age < 35) return 'Gentleman 🎩';
+    if (age < 50) return 'Adult 👨';
+    if (age < 65) return 'Uncle 🧔';
+    return 'Dada Ji 👴';
+  }
+  if (age < 13) return 'Bacchi 👧';
+  if (age < 20) return 'Teenager 🎒';
+  if (age < 35) return 'Young Lady 🌸';
+  if (age < 50) return 'Adult 👩';
+  if (age < 65) return 'Aunty 🙂';
+  return 'Dadi Ji 👵';
+}
+
+function dist(a, b){ const dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx*dx + dy*dy); }
+function eyeCenter(p, s){ let x=0, y=0; for (let i=s;i<s+6;i++){ x+=p[i].x; y+=p[i].y; } return { x:x/6, y:y/6 }; }
+function ear(p, s){
+  // eye aspect ratio: points s..s+5
+  const v1 = dist(p[s+1], p[s+5]);
+  const v2 = dist(p[s+2], p[s+4]);
+  const hz = dist(p[s], p[s+3]);
+  return (v1 + v2) / (2 * hz);
+}
+function iou(a, b){
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width), y2 = Math.min(a.y + a.height, b.y + b.height);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  const inter = (x2 - x1) * (y2 - y1);
+  return inter / (a.width * a.height + b.width * b.height - inter);
+}
+
+async function sampleLoop(){
+  if (!cameraOn) return;
+  if (reading.state !== 'locked' && !reading.busy && Date.now() - reading.lastSampleAt > 320){
+    reading.busy = true;
+    try { await takeSample(); } catch(e){}
+    reading.busy = false;
+  }
+  setTimeout(sampleLoop, 140);
+}
+
+async function takeSample(){
+  // ENGINE 2 (SSD detector) + ENGINE 3 (full landmarks) + ENGINE 1 (age/gender) + ENGINE 4 (expression)
+  const det = await faceapi
+    .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+    .withFaceLandmarks()
+    .withFaceExpressions()
+    .withAgeAndGender();
+  if (!det){
+    gateMsg.textContent = '😶 Chehra nahi dikh raha — camera ke saamne aao';
+    return;
+  }
+  const box = det.detection.box;
+  // Checkpoint 1: face ka size (paas hona chahiye)
+  if (box.width < video.videoWidth * 0.26){
+    gateMsg.textContent = '📏 Checkpoint: thoda paas aao, face chhota hai';
+    return;
+  }
+  // Checkpoint 2: dusre engine (live Tiny detector) se cross-check
+  if (!lastMainBox || iou(box, lastMainBox) < 0.35){
+    gateMsg.textContent = '🔍 Checkpoint: dusra engine confirm nahi kar paya, ruke raho';
+    return;
+  }
+  const p = det.landmarks.positions;
+  const lec = eyeCenter(p, 36), rec = eyeCenter(p, 42), nose = p[30];
+  const eyeDist = dist(lec, rec);
+  // Checkpoint 3: face seedha (yaw + roll)
+  const yaw = Math.abs((nose.x - (lec.x + rec.x) / 2) / eyeDist);
+  const roll = Math.abs(Math.atan2(rec.y - lec.y, rec.x - lec.x) * 180 / Math.PI);
+  if (yaw > 0.22 || roll > 14){
+    gateMsg.textContent = '🧭 Checkpoint: face seedha karo (tedha hai)';
+    return;
+  }
+  // Checkpoint 4: aankhen khuli
+  if (ear(p, 36) < 0.17 || ear(p, 42) < 0.17){
+    gateMsg.textContent = '👀 Checkpoint: aankhen kholo';
+    return;
+  }
+  // Reading pakki — note kar lo
+  const t = topExpr(det.expressions);
+  reading.samples.push({ age: det.age, gender: det.gender, gp: det.genderProbability, expr: t.name });
+  reading.lastSampleAt = Date.now();
+  readCount.textContent = reading.samples.length;
+  readBar.style.width = (reading.samples.length / NEED * 100) + '%';
+  gateMsg.textContent = '✅ Reading ' + reading.samples.length + '/' + NEED + ' note ho gayi — aise hi ruke raho';
+  if (reading.samples.length >= NEED) lockReading();
+}
+
+function lockReading(){
+  const s = reading.samples.slice();
+  const ages = s.map(x => x.age).sort((a,b) => a-b);
+  const trimmed = ages.slice(2, ages.length - 2);           // sabse chhoti/badi 2-2 readings hatao (galat wali)
+  const avgAge = Math.round(trimmed.reduce((a,b) => a+b, 0) / trimmed.length);
+  const maleVotes = s.filter(x => x.gender === 'male').length;
+  const gender = maleVotes >= s.length / 2 ? 'male' : 'female';
+  const gSamples = s.filter(x => x.gender === gender);
+  const gConf = Math.round(gSamples.reduce((a,b) => a + b.gp, 0) / gSamples.length * 100);
+  const exprVotes = {};
+  s.forEach(x => exprVotes[x.expr] = (exprVotes[x.expr] || 0) + 1);
+  const mood = Object.keys(exprVotes).sort((a,b) => exprVotes[b] - exprVotes[a])[0];
+  const cat = categoryFor(avgAge, gender);
+
+  reading.state = 'locked';
+  reading.result = { age: avgAge, gender, gConf, mood, cat };
+  ageVal.textContent = '~' + avgAge + ' 🔒';
+  genderVal.textContent = (gender === 'male' ? 'Male 👨' : 'Female 👩');
+  moodVal.textContent = EXPR[mood].hi;
+  gateMsg.textContent = '🔒 Reading lock ho gayi! Ab ye badlegi nahi.';
+  document.getElementById('resultCat').textContent = cat;
+  document.getElementById('resultDetail').innerHTML =
+    'Age (10 ka average): <b>~' + avgAge + ' saal</b><br>' +
+    'Gender: <b>' + (gender === 'male' ? 'Male 👨' : 'Female 👩') + '</b> (' + gConf + '% yakeen)<br>' +
+    'Mood: <b>' + EXPR[mood].hi + '</b>';
+  document.getElementById('resultBox').style.display = 'block';
+  if (window.confetti) confetti({ particleCount: 110, spread: 80, origin: { y: 0.55 }, colors: ['#e9b949','#fff2c9','#b3122e'] });
+}
+
+document.getElementById('resetReadBtn').addEventListener('click', resetReading);
+function resetReading(){
+  reading.samples = [];
+  reading.state = 'collecting';
+  reading.result = null;
+  readCount.textContent = '0';
+  readBar.style.width = '0%';
+  document.getElementById('resultBox').style.display = 'none';
+  gateMsg.textContent = '🔄 Nayi reading shuru — chehra seedha rakho';
+}
+
+/* ---------------- MODELS + CAMERA ---------------- */
 async function loadModels(){
   try{
     await Promise.all([
       faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
       faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
       faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL)
+      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
     ]);
     startBtn.disabled = false;
     startBtn.textContent = '📷 Camera On Karo';
-    hintText.innerHTML = 'Model taiyaar hai!<br>Camera on karo aur chehra screen par lao.';
+    hintText.innerHTML = 'Saare 4 engine taiyaar hain!<br>Camera on karo aur chehra screen par lao.';
   }catch(e){
-    hintText.innerHTML = 'Model load nahi ho paya.<br>Internet check karke page dobara kholo.';
+    hintText.innerHTML = 'Engine load nahi ho paye.<br>Internet check karke page dobara kholo.';
     startBtn.textContent = 'Dobara Try Karo';
     startBtn.disabled = false;
     startBtn.onclick = () => location.reload();
@@ -195,15 +374,17 @@ startBtn.addEventListener('click', async () => {
     video.srcObject = stream;
     await video.play();
     cameraOn = true;
+    reading.state = 'collecting';
     hint.style.display = 'none';
     shotBtn.disabled = false;
     gameBtn.disabled = false;
     overlay.width = video.videoWidth;
     overlay.height = video.videoHeight;
     detectLoop();
+    sampleLoop();
+    jodiLoop();
   }catch(e){
     hintText.innerHTML = 'Camera ki permission nahi mili.<br>Browser me camera Allow karke dobara try karo.';
-    hint.classList.add('err');
   }
 });
 
@@ -213,6 +394,8 @@ function topExpr(expressions){
   return { name: best, val: bestVal };
 }
 
+/* ---------------- LIVE LOOP (halka engine: box + mood + game) ---------------- */
+let moodHistory = [];
 async function detectLoop(){
   if (!cameraOn) return;
   try{
@@ -227,15 +410,24 @@ async function detectLoop(){
     faceVal.textContent = dets.length;
 
     if (dets.length){
-      // sabse bada face = main face (mirror ke hisaab se x flip)
+      lastFaceSeenAt = Date.now();
       const main = dets.reduce((a,b) => (a.detection.box.width > b.detection.box.width ? a : b));
-      ageVal.textContent = '~' + Math.round(main.age) + ' saal';
+      lastMainBox = main.detection.box;
       const t = topExpr(main.expressions);
-      moodVal.textContent = EXPR[t.name].hi;
       checkGame(t);
 
-      const size = { width: overlay.width, height: overlay.height };
-      const resized = faceapi.resizeResults(dets, size);
+      if (reading.state !== 'locked'){
+        ageVal.textContent = '~' + Math.round(main.age);
+        genderVal.textContent = (main.gender === 'male' ? 'Male 👨' : 'Female 👩');
+        moodHistory.push(t.name);
+        if (moodHistory.length > 8) moodHistory.shift();
+        const votes = {};
+        moodHistory.forEach(m => votes[m] = (votes[m] || 0) + 1);
+        const smoothMood = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+        moodVal.textContent = EXPR[smoothMood].hi;
+      }
+
+      const resized = faceapi.resizeResults(dets, { width: overlay.width, height: overlay.height });
       resized.forEach(d => {
         const b = d.detection.box;
         const x = overlay.width - b.x - b.width; // mirror
@@ -249,23 +441,57 @@ async function detectLoop(){
         ctx.lineTo(x + r, y2); ctx.quadraticCurveTo(x, y2, x, y2 - r);
         ctx.lineTo(x, b.y + r); ctx.quadraticCurveTo(x, b.y, x + r, b.y);
         ctx.stroke();
-        const label = '~' + Math.round(d.age) + ' saal • ' + EXPR[topExpr(d.expressions).name].hi;
+        const locked = reading.state === 'locked' && d === resized[0];
+        const label = (reading.result && d.detection.box.width === Math.max(...resized.map(z => z.detection.box.width)))
+          ? ('~' + reading.result.age + ' 🔒 ' + reading.result.cat)
+          : ('~' + Math.round(d.age) + ' • ' + EXPR[topExpr(d.expressions).name].hi);
         ctx.font = '600 ' + Math.max(15, overlay.width / 22) + 'px sans-serif';
         const w = ctx.measureText(label).width + 18;
+        const lh = Math.max(26, overlay.width / 16);
         ctx.fillStyle = 'rgba(42,7,16,.82)';
-        ctx.fillRect(x, Math.max(0, b.y - Math.max(26, overlay.width/16)), w, Math.max(26, overlay.width/16));
+        ctx.fillRect(x, Math.max(0, b.y - lh), w, lh);
         ctx.fillStyle = '#ffe9a8';
         ctx.fillText(label, x + 9, Math.max(18, b.y - 8));
       });
     } else {
-      ageVal.textContent = '—'; moodVal.textContent = '—';
+      lastMainBox = null;
+      if (reading.state !== 'locked'){
+        ageVal.textContent = '—'; genderVal.textContent = '—'; moodVal.textContent = '—';
+      }
       if (game.on) resetHold();
     }
-  }catch(e){ /* ek frame fail ho to loop na ruke */ }
+  }catch(e){}
   setTimeout(() => requestAnimationFrame(detectLoop), 120);
 }
 
-/* ---------- Expression Game ---------- */
+/* ---------------- JODI MATCH (merge kiya gaya dusra tool) ---------------- */
+const jodiVal = document.getElementById('jodiVal');
+let jodiBusy = false, jodiSmooth = null;
+async function jodiLoop(){
+  if (!cameraOn) return;
+  if (!jodiBusy){
+    jodiBusy = true;
+    try{
+      const dets = await faceapi
+        .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 }))
+        .withFaceLandmarks(true)
+        .withFaceDescriptors();
+      if (dets.length >= 2){
+        const two = dets.slice().sort((a,b) => b.detection.box.width - a.detection.box.width).slice(0, 2);
+        const d = faceapi.euclideanDistance(two[0].descriptor, two[1].descriptor);
+        let sim = Math.max(1, Math.min(99, Math.round((1 - d / 1.25) * 100)));
+        jodiSmooth = jodiSmooth === null ? sim : Math.round(jodiSmooth * 0.6 + sim * 0.4);
+        jodiVal.textContent = '💞 Jodi Match: ' + jodiSmooth + '%';
+      } else {
+        jodiVal.textContent = 'Do chehre ka intezaar hai… (' + dets.length + ' dikha)';
+      }
+    }catch(e){}
+    jodiBusy = false;
+  }
+  setTimeout(jodiLoop, 1100);
+}
+
+/* ---------------- EXPRESSION GAME ---------------- */
 const gameTarget = document.getElementById('gameTarget');
 const holdBar = document.getElementById('holdBar');
 const scoreVal = document.getElementById('scoreVal');
@@ -306,18 +532,18 @@ function checkGame(t){
     if (held >= 1000){
       game.score++;
       scoreVal.textContent = game.score;
-      gameTarget.textContent = '🎉 Shabash! Bilkul sahi — +' + 1 + ' point';
+      gameTarget.textContent = '🎉 Shabash! Bilkul sahi — +1 point';
       if (window.confetti) confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 }, colors: ['#e9b949','#fff2c9','#b3122e'] });
       game.holdStart = 0;
-      setTimeout(nextRound, 1100);
       game.target = '__done__';
+      setTimeout(nextRound, 1100);
     }
   } else {
     resetHold();
   }
 }
 
-/* ---------- Photo with Frame ---------- */
+/* ---------------- PHOTO WITH FRAME ---------------- */
 document.querySelectorAll('.frames button').forEach(b => {
   b.addEventListener('click', () => {
     document.querySelectorAll('.frames button').forEach(x => x.classList.remove('sel'));
@@ -348,7 +574,7 @@ function capturePhoto(){
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const x = c.getContext('2d');
-  x.translate(w, 0); x.scale(-1, 1);       // mirror selfie
+  x.translate(w, 0); x.scale(-1, 1);
   x.drawImage(video, 0, 0, w, h);
   x.setTransform(1, 0, 0, 1, 0, 0);
   drawFrame(x, w, h);
@@ -372,7 +598,6 @@ function drawFrame(x, w, h){
   x.strokeRect(bw / 2, bw / 2, w - bw, h - bw);
   x.strokeStyle = F.gold; x.lineWidth = 2.5;
   x.strokeRect(bw * 1.6, bw * 1.6, w - bw * 3.2, h - bw * 3.2);
-  // neeche wala banner
   const bh = h * 0.085;
   const bg = x.createLinearGradient(0, h - bh, 0, h);
   bg.addColorStop(0, F.b); bg.addColorStop(1, F.a);
@@ -384,6 +609,11 @@ function drawFrame(x, w, h){
   x.font = '600 ' + (bh * 0.21) + 'px sans-serif';
   x.fillStyle = '#fdf6e9';
   x.fillText(F.sub, w / 2, h - bh * 0.17);
+  if (reading.result){
+    x.font = '700 ' + (bh * 0.24) + 'px sans-serif';
+    x.fillStyle = F.gold;
+    x.fillText('🎯 ' + reading.result.cat + ' • ~' + reading.result.age + ' saal', w / 2, bh * 0.85);
+  }
 }
 
 document.getElementById('dlBtn').addEventListener('click', () => {
