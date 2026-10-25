@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AI Photo Booth — Jack Bhai</title>
+<meta name="description" content="Live camera photo booth: age guess, expression match game aur frame wali photo — shaadi, birthday, har event ke liye.">
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.15/dist/face-api.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root{
+    --maroon:#4a0e1c; --maroon2:#2a0710; --gold:#e9b949; --gold2:#c9932b;
+    --cream:#fdf6e9; --card:rgba(255,255,255,.07); --stroke:rgba(233,185,73,.35);
+  }
+  body{
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(120% 90% at 50% 0%, #6d1530 0%, var(--maroon) 45%, var(--maroon2) 100%);
+    color:var(--cream); min-height:100vh; padding:14px 14px 30px;
+  }
+  .wrap{ max-width:520px; margin:0 auto; }
+  header{ text-align:center; padding:8px 0 12px; }
+  header h1{
+    font-size:30px; letter-spacing:.5px;
+    background:linear-gradient(180deg,#ffe9a8,#e9b949 55%,#b57f1d);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 2px 12px rgba(0,0,0,.15);
+  }
+  header p{ font-size:13.5px; opacity:.85; margin-top:3px; }
+  .stage{
+    position:relative; border-radius:22px; overflow:hidden;
+    border:2px solid var(--stroke); background:#160409;
+    aspect-ratio:3/4; box-shadow:0 18px 40px rgba(0,0,0,.45);
+  }
+  video, canvas#overlay{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  video{ transform:scaleX(-1); }
+  canvas#overlay{ pointer-events:none; }
+  .stage .hint{
+    position:absolute; inset:0; display:flex; flex-direction:column; gap:10px;
+    align-items:center; justify-content:center; text-align:center; padding:24px;
+    background:linear-gradient(180deg,rgba(0,0,0,.25),rgba(0,0,0,.55)); z-index:3;
+  }
+  .hint .big{ font-size:52px; }
+  .hint p{ font-size:15px; line-height:1.5; opacity:.95; max-width:320px; }
+  #countdown{
+    position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    font-size:120px; font-weight:800; color:#ffe9a8; z-index:4;
+    text-shadow:0 6px 30px rgba(0,0,0,.7); pointer-events:none;
+  }
+  .status{
+    margin-top:12px; background:var(--card); border:1px solid var(--stroke);
+    border-radius:16px; padding:12px 14px; display:flex; gap:10px; text-align:center;
+  }
+  .status .cell{ flex:1; }
+  .status .k{ font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; opacity:.75; }
+  .status .v{ font-size:19px; font-weight:700; margin-top:3px; color:#ffe9a8; }
+  .panel{
+    margin-top:12px; background:var(--card); border:1px solid var(--stroke);
+    border-radius:16px; padding:14px;
+  }
+  .panel h2{ font-size:17px; color:#ffe9a8; margin-bottom:6px; }
+  .panel p{ font-size:14px; line-height:1.55; opacity:.92; }
+  #gameTarget{ font-size:21px; font-weight:800; margin:8px 0 4px; }
+  .bar{ height:12px; background:rgba(255,255,255,.14); border-radius:99px; overflow:hidden; margin-top:10px; }
+  .bar > div{ height:100%; width:0%; background:linear-gradient(90deg,var(--gold2),var(--gold)); transition:width .12s linear; }
+  .row{ display:flex; gap:10px; margin-top:12px; }
+  button{
+    flex:1; border:none; cursor:pointer; border-radius:14px; padding:14px 10px;
+    font-size:16px; font-weight:700; font-family:inherit;
+  }
+  button:active{ transform:scale(.98); }
+  .btn-gold{ background:linear-gradient(180deg,#f3cd6b,#d9a52f); color:#3a0a16; box-shadow:0 8px 20px rgba(217,165,47,.35); }
+  .btn-ghost{ background:rgba(255,255,255,.1); color:var(--cream); border:1px solid var(--stroke); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  .frames{ display:flex; gap:8px; margin-top:10px; }
+  .frames button{ font-size:14px; padding:10px 6px; }
+  .frames button.sel{ outline:2px solid var(--gold); background:rgba(233,185,73,.22); }
+  #shotBox{ display:none; margin-top:12px; text-align:center; }
+  #shotBox img{ width:100%; border-radius:16px; border:2px solid var(--stroke); }
+  .privacy{ text-align:center; font-size:12.5px; opacity:.7; margin-top:16px; line-height:1.6; }
+  .err{ background:rgba(255,80,80,.15); border:1px solid rgba(255,120,120,.5); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📸 AI Photo Booth</h1>
+    <p>Age guess &bull; Expression game &bull; Frame wali photo — by Jack Bhai</p>
+  </header>
+
+  <div class="stage">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div id="countdown">3</div>
+    <div class="hint" id="hint">
+      <div class="big">🤳</div>
+      <p id="hintText">Pehle AI model load ho raha hai…<br>Phir camera on karke maza shuru!</p>
+      <button class="btn-gold" id="startBtn" disabled style="flex:none; padding:14px 28px;">Model load ho raha hai…</button>
+    </div>
+  </div>
+
+  <div class="status">
+    <div class="cell"><div class="k">Age Andaaz</div><div class="v" id="ageVal">—</div></div>
+    <div class="cell"><div class="k">Mood</div><div class="v" id="moodVal">—</div></div>
+    <div class="cell"><div class="k">Faces</div><div class="v" id="faceVal">0</div></div>
+  </div>
+
+  <div class="panel" id="gamePanel">
+    <h2>🎮 Expression Match Game</h2>
+    <p>Jo expression screen par aaye, waisa hi chehra banao aur 1 second tak roke rakho. Match = point!</p>
+    <div id="gameTarget">Khel shuru karne ke liye button dabao</div>
+    <p>Score: <b id="scoreVal">0</b> &nbsp;|&nbsp; Round: <b id="roundVal">0</b></p>
+    <div class="bar"><div id="holdBar"></div></div>
+    <div class="row">
+      <button class="btn-gold" id="gameBtn" disabled>▶️ Khel Shuru Karo</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>🖼️ Frame Wali Photo</h2>
+    <p>Frame chuno, photo lo — photo tumhare phone me hi banti hai, download karke share kar do.</p>
+    <div class="frames">
+      <button class="btn-ghost sel" data-frame="shaadi">💍 Shaadi</button>
+      <button class="btn-ghost" data-frame="birthday">🎂 Birthday</button>
+      <button class="btn-ghost" data-frame="simple">✨ Simple</button>
+    </div>
+    <div class="row">
+      <button class="btn-gold" id="shotBtn" disabled>📸 Photo Lo</button>
+    </div>
+    <div id="shotBox">
+      <img id="shotImg" alt="Tumhari photo">
+      <div class="row">
+        <button class="btn-gold" id="dlBtn">⬇️ Download Karo</button>
+        <button class="btn-ghost" id="againBtn">🔄 Ek Aur</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="privacy">🔒 Privacy: tumhari photo aur video tumhare phone se bahar <b>kahin nahi jaati</b>.<br>Saara AI tumhare browser me hi chalta hai — kuch upload nahi hota.</p>
+</div>
+
+<script>
+const MODEL_URL = 'https://vladmandic.github.io/face-api/model';
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const hint = document.getElementById('hint');
+const hintText = document.getElementById('hintText');
+const startBtn = document.getElementById('startBtn');
+const shotBtn = document.getElementById('shotBtn');
+const gameBtn = document.getElementById('gameBtn');
+const ageVal = document.getElementById('ageVal');
+const moodVal = document.getElementById('moodVal');
+const faceVal = document.getElementById('faceVal');
+
+const EXPR = {
+  neutral:   { hi:'Normal 😐',    game:false },
+  happy:     { hi:'Khush 😄',     game:true  },
+  sad:       { hi:'Udaas 😢',     game:true  },
+  angry:     { hi:'Gussa 😠',     game:true  },
+  fearful:   { hi:'Darra Hua 😨', game:true  },
+  disgusted: { hi:'Ghin Wala 😖', game:true  },
+  surprised: { hi:'Hairaan 😲',   game:true  }
+};
+const GAME_EXPRS = Object.keys(EXPR).filter(k => EXPR[k].game);
+
+let cameraOn = false;
+let frameStyle = 'shaadi';
+let game = { on:false, target:null, holdStart:0, score:0, round:0 };
+
+async function loadModels(){
+  try{
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL)
+    ]);
+    startBtn.disabled = false;
+    startBtn.textContent = '📷 Camera On Karo';
+    hintText.innerHTML = 'Model taiyaar hai!<br>Camera on karo aur chehra screen par lao.';
+  }catch(e){
+    hintText.innerHTML = 'Model load nahi ho paya.<br>Internet check karke page dobara kholo.';
+    startBtn.textContent = 'Dobara Try Karo';
+    startBtn.disabled = false;
+    startBtn.onclick = () => location.reload();
+  }
+}
+
+startBtn.addEventListener('click', async () => {
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:'user', width:{ ideal:720 }, height:{ ideal:960 } },
+      audio:false
+    });
+    video.srcObject = stream;
+    await video.play();
+    cameraOn = true;
+    hint.style.display = 'none';
+    shotBtn.disabled = false;
+    gameBtn.disabled = false;
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+    detectLoop();
+  }catch(e){
+    hintText.innerHTML = 'Camera ki permission nahi mili.<br>Browser me camera Allow karke dobara try karo.';
+    hint.classList.add('err');
+  }
+});
+
+function topExpr(expressions){
+  let best = 'neutral', bestVal = 0;
+  for (const k in expressions){ if (expressions[k] > bestVal){ bestVal = expressions[k]; best = k; } }
+  return { name: best, val: bestVal };
+}
+
+async function detectLoop(){
+  if (!cameraOn) return;
+  try{
+    const dets = await faceapi
+      .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
+      .withFaceLandmarks(true)
+      .withFaceExpressions()
+      .withAgeAndGender();
+
+    const ctx = overlay.getContext('2d');
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+    faceVal.textContent = dets.length;
+
+    if (dets.length){
+      // sabse bada face = main face (mirror ke hisaab se x flip)
+      const main = dets.reduce((a,b) => (a.detection.box.width > b.detection.box.width ? a : b));
+      ageVal.textContent = '~' + Math.round(main.age) + ' saal';
+      const t = topExpr(main.expressions);
+      moodVal.textContent = EXPR[t.name].hi;
+      checkGame(t);
+
+      const size = { width: overlay.width, height: overlay.height };
+      const resized = faceapi.resizeResults(dets, size);
+      resized.forEach(d => {
+        const b = d.detection.box;
+        const x = overlay.width - b.x - b.width; // mirror
+        ctx.strokeStyle = '#e9b949';
+        ctx.lineWidth = Math.max(2, overlay.width / 180);
+        ctx.beginPath();
+        const r = 14, x2 = x + b.width, y2 = b.y + b.height;
+        ctx.moveTo(x + r, b.y);
+        ctx.lineTo(x2 - r, b.y); ctx.quadraticCurveTo(x2, b.y, x2, b.y + r);
+        ctx.lineTo(x2, y2 - r); ctx.quadraticCurveTo(x2, y2, x2 - r, y2);
+        ctx.lineTo(x + r, y2); ctx.quadraticCurveTo(x, y2, x, y2 - r);
+        ctx.lineTo(x, b.y + r); ctx.quadraticCurveTo(x, b.y, x + r, b.y);
+        ctx.stroke();
+        const label = '~' + Math.round(d.age) + ' saal • ' + EXPR[topExpr(d.expressions).name].hi;
+        ctx.font = '600 ' + Math.max(15, overlay.width / 22) + 'px sans-serif';
+        const w = ctx.measureText(label).width + 18;
+        ctx.fillStyle = 'rgba(42,7,16,.82)';
+        ctx.fillRect(x, Math.max(0, b.y - Math.max(26, overlay.width/16)), w, Math.max(26, overlay.width/16));
+        ctx.fillStyle = '#ffe9a8';
+        ctx.fillText(label, x + 9, Math.max(18, b.y - 8));
+      });
+    } else {
+      ageVal.textContent = '—'; moodVal.textContent = '—';
+      if (game.on) resetHold();
+    }
+  }catch(e){ /* ek frame fail ho to loop na ruke */ }
+  setTimeout(() => requestAnimationFrame(detectLoop), 120);
+}
+
+/* ---------- Expression Game ---------- */
+const gameTarget = document.getElementById('gameTarget');
+const holdBar = document.getElementById('holdBar');
+const scoreVal = document.getElementById('scoreVal');
+const roundVal = document.getElementById('roundVal');
+
+gameBtn.addEventListener('click', () => {
+  if (!game.on){
+    game.on = true; game.score = 0; game.round = 0;
+    gameBtn.textContent = '⏹️ Khel Band Karo';
+    nextRound();
+  } else {
+    game.on = false;
+    gameBtn.textContent = '▶️ Khel Shuru Karo';
+    gameTarget.textContent = 'Khel khatam! Final score: ' + game.score;
+    resetHold();
+  }
+  scoreVal.textContent = game.score;
+  roundVal.textContent = game.round;
+});
+
+function nextRound(){
+  let next;
+  do { next = GAME_EXPRS[Math.floor(Math.random() * GAME_EXPRS.length)]; } while (next === game.target);
+  game.target = next;
+  game.round++;
+  roundVal.textContent = game.round;
+  gameTarget.textContent = 'Aisa chehra banao: ' + EXPR[next].hi;
+  resetHold();
+}
+function resetHold(){ game.holdStart = 0; holdBar.style.width = '0%'; }
+
+function checkGame(t){
+  if (!game.on) return;
+  if (t.name === game.target && t.val > 0.5){
+    if (!game.holdStart) game.holdStart = Date.now();
+    const held = Date.now() - game.holdStart;
+    holdBar.style.width = Math.min(100, held / 10) + '%';
+    if (held >= 1000){
+      game.score++;
+      scoreVal.textContent = game.score;
+      gameTarget.textContent = '🎉 Shabash! Bilkul sahi — +' + 1 + ' point';
+      if (window.confetti) confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 }, colors: ['#e9b949','#fff2c9','#b3122e'] });
+      game.holdStart = 0;
+      setTimeout(nextRound, 1100);
+      game.target = '__done__';
+    }
+  } else {
+    resetHold();
+  }
+}
+
+/* ---------- Photo with Frame ---------- */
+document.querySelectorAll('.frames button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.frames button').forEach(x => x.classList.remove('sel'));
+    b.classList.add('sel');
+    frameStyle = b.dataset.frame;
+  });
+});
+
+shotBtn.addEventListener('click', () => {
+  const cd = document.getElementById('countdown');
+  cd.style.display = 'flex';
+  let n = 3;
+  cd.textContent = n;
+  const iv = setInterval(() => {
+    n--;
+    if (n === 0){ cd.textContent = '📸'; }
+    else if (n < 0){
+      clearInterval(iv);
+      cd.style.display = 'none';
+      capturePhoto();
+    } else cd.textContent = n;
+  }, 700);
+});
+
+let lastShotURL = null;
+function capturePhoto(){
+  const w = video.videoWidth, h = video.videoHeight;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d');
+  x.translate(w, 0); x.scale(-1, 1);       // mirror selfie
+  x.drawImage(video, 0, 0, w, h);
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  drawFrame(x, w, h);
+  lastShotURL = c.toDataURL('image/jpeg', 0.92);
+  document.getElementById('shotImg').src = lastShotURL;
+  document.getElementById('shotBox').style.display = 'block';
+  document.getElementById('shotBox').scrollIntoView({ behavior:'smooth', block:'center' });
+  if (window.confetti) confetti({ particleCount: 60, spread: 60, origin: { y: 0.5 } });
+}
+
+function drawFrame(x, w, h){
+  const F = {
+    shaadi:   { a:'#5c0f22', b:'#2a0710', gold:'#e9b949', title:'💍 SHAADI VIBES 💍', sub:'AI PHOTO BOOTH • JACK BHAI' },
+    birthday: { a:'#7b2d8b', b:'#2c1050', gold:'#ffd166', title:'🎂 HAPPY BIRTHDAY 🎂', sub:'AI PHOTO BOOTH • JACK BHAI' },
+    simple:   { a:'#1c1c22', b:'#000000', gold:'#e9b949', title:'✨ AI PHOTO BOOTH ✨', sub:'BY JACK BHAI' }
+  }[frameStyle];
+  const bw = Math.max(10, w * 0.022);
+  const grad = x.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, F.a); grad.addColorStop(1, F.b);
+  x.strokeStyle = grad; x.lineWidth = bw * 2;
+  x.strokeRect(bw / 2, bw / 2, w - bw, h - bw);
+  x.strokeStyle = F.gold; x.lineWidth = 2.5;
+  x.strokeRect(bw * 1.6, bw * 1.6, w - bw * 3.2, h - bw * 3.2);
+  // neeche wala banner
+  const bh = h * 0.085;
+  const bg = x.createLinearGradient(0, h - bh, 0, h);
+  bg.addColorStop(0, F.b); bg.addColorStop(1, F.a);
+  x.fillStyle = bg; x.fillRect(0, h - bh, w, bh);
+  x.fillStyle = F.gold;
+  x.font = '800 ' + (bh * 0.34) + 'px sans-serif';
+  x.textAlign = 'center';
+  x.fillText(F.title, w / 2, h - bh * 0.52);
+  x.font = '600 ' + (bh * 0.21) + 'px sans-serif';
+  x.fillStyle = '#fdf6e9';
+  x.fillText(F.sub, w / 2, h - bh * 0.17);
+}
+
+document.getElementById('dlBtn').addEventListener('click', () => {
+  if (!lastShotURL) return;
+  const a = document.createElement('a');
+  a.href = lastShotURL;
+  a.download = 'photo-booth-' + Date.now() + '.jpg';
+  a.click();
+});
+document.getElementById('againBtn').addEventListener('click', () => {
+  document.getElementById('shotBox').style.display = 'none';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+loadModels();
+</script>
+</body>
+</html>
